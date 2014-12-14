@@ -1,8 +1,19 @@
 __author__ = 'outao'
 import LRU
 import CLOCK
+import LFU
+import LIRS
+import OPT
+import RANDOM
+import SkLRU
+import kRANDOM_LRU
+import ARC
 
-l = {"LRU": LRU, "CLOCK": CLOCK}
+
+
+
+
+l = {"LRU": LRU, "CLOCK": CLOCK, "LFU":LFU, "LIRS":LIRS, "OPT":OPT, "RANDOM":RANDOM, "SKLRU":SkLRU, "kRANDOM_LRU":kRANDOM_LRU, "ARC":ARC}
 
 
 class staticCache:
@@ -12,10 +23,12 @@ class staticCache:
         self.stored = {}
         self.count = 0
 
-    def get(self, key):
-        self.count += 1
+    def get(self, key, warm=0):
+        if not warm:
+            self.count += 1
         if key in self.stored:
-            self.hitcount += 1
+            if not warm:
+                self.hitcount += 1
             return 1
         return 0
 
@@ -29,50 +42,64 @@ def keyFunc(item):
 
 
 class sdCache:
-    def __init__(self, c, f, logfile, algn, query_file):
+    def __init__(self, c, f, logfile, algn, query_file, k=0,sort_query='sort.txt'):
         self.query_file = query_file  # test set
         self.count = 0  # query count
         self.filename = logfile  # train set
         self.table = {}
         self.trainset = []  # (query,frequency)
         self.sCache = staticCache(c * f)
+        self.algn=algn
         alg_module = l[algn]
         self.c = c  # cache size
-        self.alg = alg_module.alg(self.c - self.sCache.c)
-
+        self.alg = alg_module.alg(self.c - self.sCache.c, k=k)
+        self.sort_query=sort_query
 
     def fill(self):
-        logfile = open(self.filename)
-        line = logfile.readline()
-        while line:
-            query = int(line)
-            if query in self.table:
-                item = self.table[query]
-                item[1] += 1
-            else:
-                item = [query, 1]
-                self.table[query] = item
-                self.trainset.append(item)
-            line = logfile.readline()
-
-        logfile.close()
-        self.trainset.sort(key=keyFunc, reverse=True)
+        logfile = open(self.sort_query)
+        lines = logfile.readlines()
         i = 0
         while i < self.sCache.c:
-            self.sCache.stored[self.trainset[i][0]] = 1
+            self.sCache.stored[int(lines[i])] = 1
             i += 1
-
-        while i < self.c:
-            self.alg.put(self.trainset[i][0])
-            i += 1
+        if self.algn == "OPT":
+            set_line = []
+            tf = open(self.filename)
+            lines = tf.readlines()
+            tf.close()
+            for line in lines:
+                query = int(line)
+                ret = self.sCache.get(query, warm=1)
+                if not ret:
+                    set_line.append(line)
+            qf = open(self.query_file)
+            lines = qf.readlines()
+            qf.close()
+            for line in lines:
+                query = int(line)
+                ret = self.sCache.get(query, warm=1)
+                if not ret:
+                    set_line.append(line)
+            self.alg.setup(set_line)
 
     def warm_up(self):
-        pass
+        tf = open(self.filename)
+        lines = tf.readlines()
+        tf.close()
+        for line in lines:
+            query = int(line)
+            ret = self.sCache.get(query, warm=1)
+            if not ret:
+                dret=self.alg.get(query, warm=1)
+                if not dret:
+                    self.alg.put(query)
+
 
     def cache_test(self):
         qf = open(self.query_file)
-        line = qf.readline()
-        while line:
+        lines = qf.readlines()
+        qf.close()
+        for line in lines:
             query = int(line)
             self.count += 1
             if self.sCache.get(query):
@@ -81,7 +108,7 @@ class sdCache:
                 pass
             else:
                 self.alg.put(query)
-            line = qf.readline()
+
 
     def print_statistics(self):
         print "query count:", self.count
@@ -90,9 +117,36 @@ class sdCache:
         print "dynamic cache hit:", self.alg.hitcount
         print "hit rate:", 1.0 * (self.sCache.hitcount + self.alg.hitcount) / self.count
 
+def pre_handler(filename,output):
+        logfile = open(filename)
+        line = logfile.readline()
+        table = {}
+        tops = []
+        while line:
+            query = int(line)
+            if query in table:
+                item = table[query]
+                item[1] += 1
+            else:
+                item = [query, 1]
+                table[query] = item
+                tops.append(item)
+            line = logfile.readline()
+        logfile.close()
+        tops.sort(key=keyFunc, reverse=True)
+        text=""
+        for item in tops:
+            text += str(item[0])
+            text += '\n'
+        out_file=open(output,'w')
+        out_file.write(text)
+        out_file.close()
 
-test = sdCache(10, 0.4, 'training.txt', "LRU", "test.txt")
+#pre_handler('training.txt','sort.txt')
+test = sdCache(10, 0.4, 'training.txt', "OPT", "test.txt")
 test.fill()
-test.sCache.show()
+test.warm_up()
+#test.sCache.show()
 test.cache_test()
 test.print_statistics()
+#print test.trainset

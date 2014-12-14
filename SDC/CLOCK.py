@@ -17,10 +17,12 @@ class alg:
         # I'm an online algorithm :-)
         pass
 
-    def get(self, key):
-        self.count += 1
+    def get(self, key, warm=0):
+        if not warm:
+            self.count += 1
         if key in self.stored:
-            self.hitcount += 1
+            if not warm:
+                self.hitcount += 1
             self.stored[key] = 1
             return 1
         return 0

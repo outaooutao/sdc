@@ -90,10 +90,12 @@ class alg:
     # usage x = get(key)
     # if the key is found in the cache, put it in the LRU head and return the value
     # else return None
-    def get(self, key):
-        self.count += 1
+    def get(self, key, warm=0):
+        if not warm:
+            self.count += 1
         if key in self.stored:
-            self.hitcount += 1
+            if not warm:
+                self.hitcount += 1
             n = self.stored[key]
             if n != self.head:
                 self.unlink(n)
